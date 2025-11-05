@@ -1,0 +1,6 @@
+
+{
+  "name": "FinanZen - Asistente Financiero Inteligente",
+  "description": "Una aplicación de gestión de gastos que utiliza IA para clasificar automáticamente los gastos a partir de recibos, realizar un seguimiento de los presupuestos y gestionar las inversiones para un control financiero completo.",
+  "requestFramePermissions": []
+}

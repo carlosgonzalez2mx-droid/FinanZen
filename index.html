@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FinanZen - Asistente Financiero Inteligente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            colors: {
+              'brand-primary': '#4F46E5', // Indigo 600
+              'brand-secondary': '#10B981', // Emerald 500
+              'base-100': '#1F2937', // Slate 800 (Cards, Modals)
+              'base-200': '#111827', // Slate 900 (Page Background)
+              'base-300': '#374151', // Slate 700 (Borders, Dividers, Inputs)
+              'text-primary': '#F3F4F6', // Slate 100 (Main text)
+              'text-secondary': '#9CA3AF', // Slate 400 (Subtle text)
+            }
+          }
+        }
+      }
+    </script>
+  </head>
+  <body class="bg-base-200 text-text-primary">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

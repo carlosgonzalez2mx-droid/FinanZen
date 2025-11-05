@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Gemini API</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 {
+            color: #4CAF50;
+            text-align: center;
+        }
+        .container {
+            background: #16213e;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: 2px solid #0f3460;
+            border-radius: 5px;
+            font-size: 14px;
+            background: #0f3460;
+            color: #eee;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #0f3460;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .loading {
+            text-align: center;
+            color: #4CAF50;
+            font-style: italic;
+        }
+        .error {
+            color: #f44336;
+        }
+        .success {
+            color: #4CAF50;
+        }
+        .model-item {
+            padding: 8px;
+            margin: 5px 0;
+            background: #1a1a2e;
+            border-left: 3px solid #4CAF50;
+            border-radius: 3px;
+        }
+        .info {
+            background: #2196F3;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Test Gemini API - Modelos Disponibles</h1>
+    <div class="container">
+        <div class="info">
+            📝 Esta herramienta te permite verificar qué modelos de Gemini están disponibles con tu API key.
+        </div>
+
+        <label for="apiKey">API Key de Google Gemini:</label>
+        <input type="text" id="apiKey" placeholder="AIzaSy..." />
+
+        <button onclick="testAPI()">🚀 Listar Modelos Disponibles</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script type="module">
+        window.testAPI = async function() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const resultDiv = document.getElementById('result');
+
+            if (!apiKey) {
+                resultDiv.innerHTML = '<div class="error">❌ Por favor, ingresa tu API key</div>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<div class="loading">⏳ Consultando modelos disponibles...</div>';
+
+            try {
+                // Intentar listar modelos disponibles
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status} - ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                if (!data.models || data.models.length === 0) {
+                    resultDiv.innerHTML = '<div class="error">⚠️ No se encontraron modelos disponibles</div>';
+                    return;
+                }
+
+                // Filtrar solo modelos que soportan generateContent
+                const availableModels = data.models.filter(model =>
+                    model.supportedGenerationMethods?.includes('generateContent')
+                );
+
+                let html = '<div class="success">✅ API Key válida!</div>';
+                html += `<h3>📋 Modelos disponibles (${availableModels.length}):</h3>`;
+
+                availableModels.forEach(model => {
+                    const modelName = model.name.replace('models/', '');
+                    const displayName = model.displayName || modelName;
+                    const description = model.description || 'Sin descripción';
+
+                    html += `
+                        <div class="model-item">
+                            <strong>🤖 ${displayName}</strong><br>
+                            <small>ID: <code>${modelName}</code></small><br>
+                            <small>${description}</small>
+                        </div>
+                    `;
+                });
+
+                html += '<hr>';
+                html += '<h4>💡 Modelos recomendados para tu app:</h4>';
+                html += '<ul>';
+
+                const recommendedModels = [
+                    'gemini-pro',
+                    'gemini-pro-vision',
+                    'gemini-1.5-pro',
+                    'gemini-1.5-flash',
+                    'gemini-1.5-pro-latest',
+                    'gemini-1.5-flash-latest'
+                ];
+
+                recommendedModels.forEach(modelId => {
+                    const found = availableModels.find(m => m.name.includes(modelId));
+                    if (found) {
+                        html += `<li style="color: #4CAF50;">✅ <strong>${modelId}</strong> - Disponible</li>`;
+                    } else {
+                        html += `<li style="color: #666;">❌ ${modelId} - No disponible</li>`;
+                    }
+                });
+
+                html += '</ul>';
+
+                // Recomendar el mejor modelo disponible
+                let bestModel = null;
+                const priority = ['gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-1.5-pro-latest', 'gemini-1.5-pro', 'gemini-pro-vision', 'gemini-pro'];
+
+                for (const modelId of priority) {
+                    if (availableModels.find(m => m.name.includes(modelId))) {
+                        bestModel = modelId;
+                        break;
+                    }
+                }
+
+                if (bestModel) {
+                    html += `
+                        <div class="info" style="background: #4CAF50; margin-top: 15px;">
+                            <strong>🎯 Recomendación:</strong><br>
+                            Usa el modelo: <code>${bestModel}</code><br>
+                            <small>Este es el mejor modelo disponible para tu API key</small>
+                        </div>
+                    `;
+                }
+
+                resultDiv.innerHTML = html;
+
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <strong>❌ Error al consultar la API:</strong><br>
+                        ${error.message}<br><br>
+                        <strong>Posibles causas:</strong><br>
+                        • API key incorrecta o inválida<br>
+                        • La API de Generative Language no está habilitada<br>
+                        • Problemas de red o CORS<br><br>
+                        <strong>Solución:</strong><br>
+                        1. Verifica que tu API key sea correcta<br>
+                        2. Ve a: <a href="https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com" target="_blank">Google Cloud Console</a><br>
+                        3. Habilita "Generative Language API"
+                    </div>
+                `;
+            }
+        };
+    </script>
+</body>
+</html>

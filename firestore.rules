@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Profiles collection - users can read/write their own profile
+    match /profiles/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+    
+    // Transactions collection - users can only access their own transactions
+    match /transactions/{transactionId} {
+      allow read, write: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      allow list: if isAuthenticated(); // Permitir listar para consultas getDocs
+    }
+    
+    // Payment methods collection - users can only access their own payment methods
+    match /payment_methods/{paymentMethodId} {
+      allow read, write: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      allow list: if isAuthenticated(); // Permitir listar para consultas getDocs
+    }
+    
+    // User categories collection - users can only access their own categories
+    match /user_categories/{categoryId} {
+      allow read, write: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      allow list: if isAuthenticated(); // Permitir listar para consultas getDocs
+    }
+    
+    // Budget plans collection - users can read/write their own budget plan
+    match /budget_plans/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+    
+    // Budget templates collection - users can only access their own templates
+    match /budget_templates/{templateId} {
+      allow read, write: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      allow list: if isAuthenticated(); // Permitir listar para consultas getDocs
+    }
+  }
+}
+

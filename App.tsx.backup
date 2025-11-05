@@ -1,0 +1,534 @@
+
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import type { Transaction, View, MainCategory, MutableBudgetCategory, BudgetTemplate, CategoryDetailData, Profile } from './types';
+import { INITIAL_BUDGET_CATEGORIES, INITIAL_PAYMENT_METHODS } from './constants';
+import Header from './components/Header';
+import Dashboard from './components/Dashboard';
+import AccountsPage from './components/AccountsPage';
+import BudgetPage from './components/BudgetPage';
+import AddExpenseModal from './components/AddExpenseModal';
+import TemplateManagerModal from './components/TemplateManagerModal';
+import CycleReportModal from './components/CycleReportModal';
+import CategoryDetailModal from './components/CategoryDetailModal';
+import Login from './components/Login';
+import SubscriptionModal from './components/SubscriptionModal';
+import { PlusCircleIcon } from './components/Icons';
+import { analyzeBudgetPDF } from './services/geminiService';
+import { auth, db } from './firebaseClient';
+import { onAuthStateChanged, type User } from 'firebase/auth';
+import { collection, doc, getDoc, getDocs, query, where, orderBy, addDoc, writeBatch, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+
+
+const App: React.FC = () => {
+  console.log('App component rendering...');
+  
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  
+  const [view, setView] = useState<View>('dashboard');
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  
+  // Modals state
+  const [isAddExpenseModalOpen, setIsAddExpenseModalOpen] = useState<boolean>(false);
+  const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState<boolean>(false);
+  const [isCycleReportOpen, setIsCycleReportOpen] = useState<boolean>(false);
+  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState<boolean>(false);
+  const [selectedCategoryData, setSelectedCategoryData] = useState<CategoryDetailData | null>(null);
+  
+  // Budget, Categories and Accounts state
+  const [budgetPlan, setBudgetPlan] = useState<Record<string, number>>({});
+  const [budgetCategories, setBudgetCategories] = useState<MutableBudgetCategory[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
+  
+  // Templates state
+  const [budgetTemplates, setBudgetTemplates] = useState<BudgetTemplate[]>([]);
+
+  useEffect(() => {
+    console.log('Setting up auth state listener...');
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log('Auth state changed:', user ? 'User logged in' : 'No user');
+      setUser(user);
+      setLoading(false);
+    }, (error) => {
+      console.error('Auth error:', error);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const fetchData = useCallback(async () => {
+    if (!user) return;
+
+    // Fetch Profile or create it for a new user
+    const profileRef = doc(db, 'profiles', user.uid);
+    const profileSnap = await getDoc(profileRef);
+
+    if (profileSnap.exists()) {
+        setProfile(profileSnap.data() as Profile);
+    } else {
+        const trialEndDate = new Date();
+        trialEndDate.setDate(trialEndDate.getDate() + 14);
+        const newProfile: Profile = {
+            id: user.uid,
+            updated_at: new Date().toISOString(),
+            full_name: user.displayName || '',
+            avatar_url: user.photoURL || '',
+            is_subscribed: false,
+            trial_ends_at: trialEndDate.toISOString(),
+        };
+        await setDoc(profileRef, newProfile);
+        setProfile(newProfile);
+    }
+    
+    // Fetch Transactions
+    // Note: Ordenamos en el cliente para evitar necesidad de índice compuesto
+    const transQuery = query(collection(db, 'transactions'), where('user_id', '==', user.uid));
+    const transSnap = await getDocs(transQuery);
+    const transactionsList = transSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Transaction[];
+    // Ordenar por fecha en el cliente (más reciente primero)
+    transactionsList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    setTransactions(transactionsList);
+
+    // Fetch Payment Methods
+    const pmQuery = query(collection(db, 'payment_methods'), where('user_id', '==', user.uid));
+    const pmSnap = await getDocs(pmQuery);
+    if (!pmSnap.empty) {
+        setPaymentMethods(pmSnap.docs.map(d => d.data().name));
+    } else {
+        const batch = writeBatch(db);
+        INITIAL_PAYMENT_METHODS.forEach(name => {
+            const newPMRef = doc(collection(db, 'payment_methods'));
+            batch.set(newPMRef, { user_id: user.uid, name });
+        });
+        await batch.commit();
+        setPaymentMethods(INITIAL_PAYMENT_METHODS);
+    }
+
+    // Fetch Budget Categories
+    const catQuery = query(collection(db, 'user_categories'), where('user_id', '==', user.uid));
+    const catSnap = await getDocs(catQuery);
+    if (!catSnap.empty) {
+        const dbCategories = catSnap.docs.map(d => d.data());
+        const grouped = dbCategories.reduce((acc, current) => {
+            acc[current.main_category] = acc[current.main_category] || [];
+            acc[current.main_category].push(current.subcategory);
+            return acc;
+        }, {} as Record<string, string[]>);
+        const mutableCategories = Object.entries(grouped).map(([name, subcategories]) => ({ name: name as MainCategory, subcategories }));
+        setBudgetCategories(mutableCategories);
+    } else {
+        const batch = writeBatch(db);
+        INITIAL_BUDGET_CATEGORIES.forEach(cat => {
+            cat.subcategories.forEach(sub => {
+                const newCatRef = doc(collection(db, 'user_categories'));
+                batch.set(newCatRef, { user_id: user.uid, main_category: cat.name, subcategory: sub });
+            });
+        });
+        await batch.commit();
+        setBudgetCategories(INITIAL_BUDGET_CATEGORIES.map(c => ({...c, subcategories: [...c.subcategories]})));
+    }
+
+    // Fetch Budget Plan (now a single document per user)
+    const planRef = doc(db, 'budget_plans', user.uid);
+    const planSnap = await getDoc(planRef);
+    if(planSnap.exists()) {
+        setBudgetPlan(planSnap.data() as Record<string, number>);
+    } else {
+        setBudgetPlan({});
+    }
+
+    // Fetch Templates
+    const templateQuery = query(collection(db, 'budget_templates'), where('user_id', '==', user.uid));
+    const templateSnap = await getDocs(templateQuery);
+    setBudgetTemplates(templateSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as BudgetTemplate[]);
+
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      fetchData();
+    } else {
+      // Clear data on logout
+      setTransactions([]);
+      setProfile(null);
+      setBudgetPlan({});
+      setBudgetCategories([]);
+      setPaymentMethods([]);
+      setBudgetTemplates([]);
+    }
+  }, [user, fetchData]);
+
+  const isProActive = useMemo(() => {
+    if (!profile) return false;
+    if (profile.is_subscribed) return true;
+    if (profile.trial_ends_at) {
+        return new Date(profile.trial_ends_at) > new Date();
+    }
+    return false;
+  }, [profile]);
+  
+  const totalExpenses = useMemo(() => {
+    return transactions.reduce((sum, t) => sum + t.amount, 0);
+  }, [transactions]);
+
+  const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id' | 'created_at'>) => {
+    if (!user) return;
+    const newTransaction = {
+      ...transaction,
+      created_at: new Date().toISOString(),
+    };
+    const docRef = await addDoc(collection(db, "transactions"), newTransaction);
+    setTransactions(prev => [{ ...newTransaction, id: docRef.id }, ...prev]);
+  }, [user]);
+
+  const handleBudgetUpload = async (file: File) => {
+    if (!user) return;
+    const fileToDataUri = (file: File) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => resolve(event.target?.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+    const dataUri = await fileToDataUri(file);
+    const base64Pdf = dataUri.split(',')[1];
+    const budgetItems = await analyzeBudgetPDF(base64Pdf);
+    
+    if (budgetItems.length > 0) {
+        const newPlan = budgetItems.reduce((acc, item) => {
+            acc[item.subcategory] = item.amount;
+            return acc;
+        }, {} as Record<string, number>);
+        await setDoc(doc(db, "budget_plans", user.uid), newPlan, { merge: true });
+        fetchData();
+    }
+  };
+  
+  const handleAddSubcategory = async (mainCategory: MainCategory, newSubcategoryName: string) => {
+    if(!user) return;
+    if (budgetCategories.flatMap(c => c.subcategories).some(s => s.toLowerCase() === newSubcategoryName.toLowerCase())) {
+        alert('La subcategoría ya existe.');
+        return;
+    }
+    await addDoc(collection(db, 'user_categories'), {
+        user_id: user.uid,
+        main_category: mainCategory,
+        subcategory: newSubcategoryName
+    });
+    fetchData();
+  };
+
+  const handleUpdateSubcategory = async (mainCategory: MainCategory, oldName: string, newName: string) => {
+    if(!user) return;
+    const batch = writeBatch(db);
+
+    // 1. Update in user_categories
+    const catQuery = query(collection(db, 'user_categories'), where('user_id', '==', user.uid), where('main_category', '==', mainCategory), where('subcategory', '==', oldName));
+    const catSnap = await getDocs(catQuery);
+    catSnap.forEach(doc => batch.update(doc.ref, { subcategory: newName }));
+
+    // 2. Update in transactions
+    const transQuery = query(collection(db, 'transactions'), where('user_id', '==', user.uid), where('subcategory', '==', oldName));
+    const transSnap = await getDocs(transQuery);
+    transSnap.forEach(doc => batch.update(doc.ref, { subcategory: newName }));
+
+    await batch.commit();
+
+    // 3. Update in budget_plan (which is a map in a single doc)
+    const planRef = doc(db, 'budget_plans', user.uid);
+    const planSnap = await getDoc(planRef);
+    if (planSnap.exists()) {
+        const currentPlan = planSnap.data();
+        if(currentPlan[oldName] !== undefined) {
+            const newPlan = {...currentPlan, [newName]: currentPlan[oldName]};
+            delete newPlan[oldName];
+            await setDoc(planRef, newPlan);
+        }
+    }
+
+    fetchData();
+  };
+
+  const handleDeleteSubcategory = async (mainCategory: MainCategory, subcategoryName: string) => {
+    if (window.confirm(`¿Estás seguro de que quieres eliminar la subcategoría "${subcategoryName}"?`)) {
+        if(!user) return;
+        // 1. Delete from user_categories
+        const catQuery = query(collection(db, 'user_categories'), where('user_id', '==', user.uid), where('main_category', '==', mainCategory), where('subcategory', '==', subcategoryName));
+        const catSnap = await getDocs(catQuery);
+        catSnap.forEach(doc => deleteDoc(doc.ref));
+        
+        // 2. Delete from budget plan
+        const planRef = doc(db, 'budget_plans', user.uid);
+        const planSnap = await getDoc(planRef);
+         if (planSnap.exists()) {
+            const currentPlan = planSnap.data();
+            if(currentPlan[subcategoryName] !== undefined) {
+                delete currentPlan[subcategoryName];
+                await setDoc(planRef, currentPlan);
+            }
+        }
+        fetchData();
+    }
+  };
+  
+  const handleSetBudgetPlan = async (newPlan: Record<string, number>) => {
+    if (user) {
+      await setDoc(doc(db, "budget_plans", user.uid), newPlan);
+      setBudgetPlan(newPlan); // Optimistic update
+    }
+  };
+  
+  const handleAddPaymentMethod = async (name: string) => {
+    if (paymentMethods.find(pm => pm.toLowerCase() === name.toLowerCase())) {
+        alert("El método de pago ya existe.");
+        return false;
+    }
+    if(user) {
+        await addDoc(collection(db, 'payment_methods'), { user_id: user.uid, name });
+        fetchData();
+        return true;
+    }
+    return false;
+  };
+
+  const handleUpdatePaymentMethod = async (oldName: string, newName: string) => {
+     if (oldName.toLowerCase() !== newName.toLowerCase() && paymentMethods.find(pm => pm.toLowerCase() === newName.toLowerCase())) {
+      alert("Ya existe un método de pago con este nombre.");
+      return false;
+    }
+    if(user) {
+        const batch = writeBatch(db);
+        // 1. Update payment_methods doc
+        const pmQuery = query(collection(db, 'payment_methods'), where('user_id', '==', user.uid), where('name', '==', oldName));
+        const pmSnap = await getDocs(pmQuery);
+        pmSnap.forEach(doc => batch.update(doc.ref, { name: newName }));
+
+        // 2. Update transactions
+        const transQuery = query(collection(db, 'transactions'), where('user_id', '==', user.uid), where('paymentMethod', '==', oldName));
+        const transSnap = await getDocs(transQuery);
+        transSnap.forEach(doc => batch.update(doc.ref, { paymentMethod: newName }));
+        
+        await batch.commit();
+        fetchData();
+        return true;
+    }
+    return false;
+  };
+
+  const handleDeletePaymentMethod = async (name: string) => {
+    if (transactions.some(t => t.paymentMethod === name)) {
+      alert("No se puede eliminar el método de pago porque está siendo utilizado en transacciones.");
+      return;
+    }
+    if (window.confirm(`¿Estás seguro de que quieres eliminar el método de pago "${name}"?`)) {
+      if(user) {
+        const pmQuery = query(collection(db, 'payment_methods'), where('user_id', '==', user.uid), where('name', '==', name));
+        const pmSnap = await getDocs(pmQuery);
+        pmSnap.forEach(doc => deleteDoc(doc.ref));
+        fetchData();
+      }
+    }
+  };
+
+  const handleSaveTemplate = async (name: string, overwrite: boolean = false) => {
+    if (!user || !name.trim()) return;
+
+    const existingQuery = query(collection(db, 'budget_templates'), where('user_id', '==', user.uid), where('name', '==', name.trim()));
+    const existingSnap = await getDocs(existingQuery);
+    
+    if (!existingSnap.empty && !overwrite) {
+        // This case is handled in TemplateManagerModal, but as a safeguard
+        alert('Ya existe una plantilla con ese nombre.');
+        return;
+    }
+
+    const newTemplate = {
+        user_id: user.uid,
+        name: name.trim(),
+        plan: budgetPlan,
+        categories: budgetCategories,
+        created_at: new Date().toISOString()
+    };
+    
+    if (!existingSnap.empty) {
+        await setDoc(doc(db, 'budget_templates', existingSnap.docs[0].id), newTemplate);
+    } else {
+        await addDoc(collection(db, 'budget_templates'), newTemplate);
+    }
+
+    fetchData();
+  };
+
+  const handleLoadTemplate = (templateName: string) => {
+      const template = budgetTemplates.find(t => t.name === templateName);
+      if (template && user) {
+          handleSetBudgetPlan(template.plan);
+          // Category loading would be more complex, for now we just load the plan
+          setIsTemplateManagerOpen(false);
+      }
+  };
+
+  const handleDeleteTemplate = async (templateName: string) => {
+      if (window.confirm(`¿Estás seguro de que quieres eliminar la plantilla "${templateName}"?`)) {
+          if(user) {
+            const q = query(collection(db, 'budget_templates'), where('user_id', '==', user.uid), where('name', '==', templateName));
+            const snap = await getDocs(q);
+            snap.forEach(d => deleteDoc(d.ref));
+            fetchData();
+          }
+      }
+  };
+
+  const handleStartNewCycle = async () => {
+    if (window.confirm("Esto eliminará todas las transacciones para el nuevo período. ¿Estás seguro?")) {
+      if(user) {
+        const q = query(collection(db, 'transactions'), where('user_id', '==', user.uid));
+        const snap = await getDocs(q);
+        const batch = writeBatch(db);
+        snap.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+        setTransactions([]);
+        setIsCycleReportOpen(false);
+      }
+    }
+  };
+  
+  const handleSelectCategory = useCallback((categoryName: MainCategory) => {
+      const categoryInfo = budgetCategories.find(c => c.name === categoryName);
+      if (!categoryInfo) return;
+
+      const categoryTransactions = transactions.filter(t => t.category === categoryName);
+      
+      setSelectedCategoryData({
+          name: categoryName,
+          subcategories: categoryInfo.subcategories,
+          transactions: categoryTransactions,
+          budgetPlan: budgetPlan 
+      });
+  }, [budgetCategories, transactions, budgetPlan]);
+
+  const handleCloseCategoryDetail = useCallback(() => {
+      setSelectedCategoryData(null);
+  }, []);
+  
+  const handleSubscribe = async () => {
+    if (!user) return;
+    await updateDoc(doc(db, 'profiles', user.uid), { is_subscribed: true, updated_at: new Date().toISOString() });
+    fetchData(); // Refetch profile to update UI
+    setIsSubscriptionModalOpen(false);
+    setTimeout(() => setIsAddExpenseModalOpen(true), 300);
+  };
+
+  const renderContent = () => {
+    switch (view) {
+      case 'dashboard':
+        return (
+          <Dashboard
+            transactions={transactions}
+            totalExpenses={totalExpenses}
+            budgetCategories={budgetCategories}
+            budgetPlan={budgetPlan}
+            onSelectCategory={handleSelectCategory}
+          />
+        );
+      case 'accounts':
+        return <AccountsPage 
+                  paymentMethods={paymentMethods}
+                  onAddPaymentMethod={handleAddPaymentMethod}
+                  onUpdatePaymentMethod={handleUpdatePaymentMethod}
+                  onDeletePaymentMethod={handleDeletePaymentMethod}
+               />;
+      case 'budget':
+        return <BudgetPage 
+                  budgetCategories={budgetCategories}
+                  transactions={transactions} 
+                  budgetPlan={budgetPlan}
+                  setBudgetPlan={handleSetBudgetPlan}
+                  onBudgetUpload={handleBudgetUpload}
+                  onAddSubcategory={handleAddSubcategory}
+                  onUpdateSubcategory={handleUpdateSubcategory}
+                  onDeleteSubcategory={handleDeleteSubcategory}
+                  onOpenTemplateManager={() => setIsTemplateManagerOpen(true)}
+                  onOpenCycleReport={() => setIsCycleReportOpen(true)}
+               />;
+      default:
+        return null;
+    }
+  }
+  
+  if (loading) {
+      return (
+          <div className="min-h-screen bg-base-200 flex items-center justify-center">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-brand-primary"></div>
+          </div>
+      );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
+  return (
+    <div className="min-h-screen bg-base-200 font-sans">
+      <Header currentView={view} setView={setView} />
+      <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+        {renderContent()}
+      </main>
+
+      <div className="fixed bottom-6 right-6 z-30">
+        <button
+          onClick={() => setIsAddExpenseModalOpen(true)}
+          className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold p-4 rounded-full shadow-lg transition-transform transform hover:scale-110 flex items-center justify-center"
+          aria-label="Añadir gasto"
+        >
+          <PlusCircleIcon className="h-8 w-8" />
+        </button>
+      </div>
+
+      <AddExpenseModal
+        isOpen={isAddExpenseModalOpen}
+        onClose={() => setIsAddExpenseModalOpen(false)}
+        onAddTransaction={addTransaction}
+        categories={budgetCategories}
+        paymentMethods={paymentMethods}
+        isProActive={isProActive}
+        onOpenSubscriptionModal={() => {
+            setIsAddExpenseModalOpen(false);
+            setIsSubscriptionModalOpen(true);
+        }}
+      />
+      
+      <TemplateManagerModal
+        isOpen={isTemplateManagerOpen}
+        onClose={() => setIsTemplateManagerOpen(false)}
+        templates={budgetTemplates}
+        onSave={handleSaveTemplate}
+        onLoad={handleLoadTemplate}
+        onDelete={handleDeleteTemplate}
+      />
+
+      <CycleReportModal
+        isOpen={isCycleReportOpen}
+        onClose={() => setIsCycleReportOpen(false)}
+        transactions={transactions}
+        budgetPlan={budgetPlan}
+        budgetCategories={budgetCategories}
+        onConfirmNewCycle={handleStartNewCycle}
+      />
+
+      <CategoryDetailModal
+        isOpen={!!selectedCategoryData}
+        onClose={handleCloseCategoryDetail}
+        categoryData={selectedCategoryData}
+      />
+
+      <SubscriptionModal
+        isOpen={isSubscriptionModalOpen}
+        onClose={() => setIsSubscriptionModalOpen(false)}
+        onSubscribe={handleSubscribe}
+      />
+    </div>
+  );
+};
+
+export default App;
