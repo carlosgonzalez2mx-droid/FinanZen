@@ -112,22 +112,40 @@ INSTRUCCIONES:
 
 ${JSON.stringify(allSubcategories, null, 2)}
 
-REGLAS DE CATEGORIZACIÓN:
-- Restaurantes/comida → "Comidas fuera"
-- Supermercados/tiendas → "Supermercado"
-- Gasolina/transporte → "Gasolina" o "Transporte público"
-- Amazon/compras online → "Compras en línea"
-- Netflix/servicios → "Entretenimiento digital"
-- Rappi/Uber Eats → "Apps de comida"
-- Cafeterías → "Cafeterías"
-- Apps/software → "Aplicaciones y software"
-- Viajes/hoteles → "Viajes y vacaciones"
+REGLAS DE CATEGORIZACIÓN (USA EXACTAMENTE ESTOS NOMBRES):
+- Restaurantes/comida fuera → "Restaurantes"
+- Supermercados/tiendas de comida → "Despensa"
+- Gasolina → "Gasolina y fluidos"
+- Transporte público/Uber/taxis → "Transporte público"
+- Vuelos/avión → "Vuelos"
+- Estacionamiento/casetas → "Estacionamiento y casetas"
+- Amazon/compras online → "Otros gastos personales"
+- Netflix/Disney/streaming video → "Suscripciones de video"
+- Spotify/Apple Music/audio → "Suscripciones de audio"
+- Rappi/Uber Eats/apps comida → "Restaurantes"
+- Apps/software/tecnología → "Artículos de tecnología"
+- Hoteles/hospedaje → "Hospedaje"
+- Viajes/paquetes turísticos → "Paquetes de viajes"
+- Ropa → "Ropa adultos"
+- Zapatos → "Zapatos adultos"
+- Electricidad/luz → "Electricidad"
+- Gas → "Gas"
+- Agua → "Agua"
+- Celular/teléfono → "Celular"
+- Internet → "Internet"
+- Cable/TV → "Televisión por cable"
+- Medicinas → "Medicamentos"
+- Doctor/consultas → "Doctores"
+- Dentista → "Dentistas"
+- Tarjetas de crédito → "Tarjetas de crédito"
+- Regalos → "Regalos"
+- Mascotas → "Suministros para mascotas"
 - Si no estás seguro → "Otros gastos personales"
 
 FORMATO DE RESPUESTA (JSON válido):
 [
-  {"subcategory": "Comidas fuera", "amount": 150.50},
-  {"subcategory": "Supermercado", "amount": 200.00}
+  {"subcategory": "Restaurantes", "amount": 150.50},
+  {"subcategory": "Despensa", "amount": 200.00}
 ]
 
 IMPORTANTE:
