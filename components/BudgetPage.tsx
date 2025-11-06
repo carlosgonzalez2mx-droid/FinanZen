@@ -11,6 +11,7 @@ interface BudgetPageProps {
   onAddSubcategory: (mainCategory: MainCategory, newSubcategoryName: string) => void;
   onUpdateSubcategory: (mainCategory: MainCategory, oldName: string, newName: string) => void;
   onDeleteSubcategory: (mainCategory: MainCategory, subcategoryName: string) => void;
+  onClearBudget: () => void;
   onOpenTemplateManager: () => void;
   onOpenCycleReport: () => void;
 }
@@ -256,7 +257,7 @@ const BudgetCategoryItem: React.FC<{
 };
 
 
-const BudgetPage: React.FC<BudgetPageProps> = ({ transactions, budgetPlan, setBudgetPlan, onBudgetUpload, budgetCategories, onAddSubcategory, onUpdateSubcategory, onDeleteSubcategory, onOpenTemplateManager, onOpenCycleReport }) => {
+const BudgetPage: React.FC<BudgetPageProps> = ({ transactions, budgetPlan, setBudgetPlan, onBudgetUpload, budgetCategories, onAddSubcategory, onUpdateSubcategory, onDeleteSubcategory, onClearBudget, onOpenTemplateManager, onOpenCycleReport }) => {
   const [isAnalyzingPDF, setIsAnalyzingPDF] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
@@ -301,9 +302,16 @@ const BudgetPage: React.FC<BudgetPageProps> = ({ transactions, budgetPlan, setBu
                  <button onClick={onOpenCycleReport} className="flex items-center gap-2 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-indigo-500">
                     <DocumentTextIcon className="h-5 w-5"/> Cerrar Ciclo y Reportar
                 </button>
+                <button
+                  onClick={onClearBudget}
+                  className="flex items-center gap-2 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-500 hover:bg-red-600"
+                >
+                  <TrashIcon className="h-5 w-5"/>
+                  Borrar Presupuesto
+                </button>
                 <input type="file" id="pdf-upload" accept="application/pdf" className="hidden" onChange={handleFileSelect} disabled={isAnalyzingPDF} />
-                <button 
-                  onClick={() => document.getElementById('pdf-upload')?.click()} 
+                <button
+                  onClick={() => document.getElementById('pdf-upload')?.click()}
                   disabled={isAnalyzingPDF}
                   className="flex items-center gap-2 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-secondary hover:bg-emerald-500 disabled:bg-emerald-700 disabled:cursor-not-allowed"
                 >

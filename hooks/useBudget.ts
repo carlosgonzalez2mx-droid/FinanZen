@@ -303,6 +303,20 @@ export const useBudget = (user: User | null) => {
     }
   }, [user, fetchBudgetData, showNotification]);
 
+  const clearBudgetPlan = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      await deleteDoc(doc(db, 'budget_plans', user.uid));
+      await fetchBudgetData();
+      showNotification('Presupuesto borrado exitosamente', 'success');
+    } catch (error) {
+      console.error('Error clearing budget:', error);
+      showNotification('Error al borrar el presupuesto', 'error');
+      throw error;
+    }
+  }, [user, fetchBudgetData, showNotification]);
+
   useEffect(() => {
     fetchBudgetData();
   }, [fetchBudgetData]);
@@ -319,6 +333,7 @@ export const useBudget = (user: User | null) => {
     saveTemplate,
     loadTemplate,
     deleteTemplate,
+    clearBudgetPlan,
     refetchBudget: fetchBudgetData
   };
 };

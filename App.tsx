@@ -36,7 +36,8 @@ const AppContent: React.FC = () => {
     deleteSubcategory,
     saveTemplate,
     loadTemplate,
-    deleteTemplate
+    deleteTemplate,
+    clearBudgetPlan
   } = useBudget(user);
   const { paymentMethods, addPaymentMethod, updatePaymentMethod, deletePaymentMethod } = usePaymentMethods(user);
 
@@ -145,6 +146,19 @@ const AppContent: React.FC = () => {
     });
   };
 
+  const handleClearBudgetWithConfirm = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Borrar Presupuesto',
+      message: '¿Estás seguro de que quieres borrar todos los datos del presupuesto actual? Esta acción no se puede deshacer.',
+      type: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        await clearBudgetPlan();
+      }
+    });
+  };
+
   const renderContent = () => {
     switch (view) {
       case 'dashboard':
@@ -177,6 +191,7 @@ const AppContent: React.FC = () => {
             onAddSubcategory={addSubcategory}
             onUpdateSubcategory={updateSubcategory}
             onDeleteSubcategory={handleDeleteSubcategoryWithConfirm}
+            onClearBudget={handleClearBudgetWithConfirm}
             onOpenTemplateManager={() => setIsTemplateManagerOpen(true)}
             onOpenCycleReport={() => setIsCycleReportOpen(true)}
           />
