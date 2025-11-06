@@ -102,59 +102,34 @@ export async function analyzeBudgetPDF(base64Pdf: string): Promise<Array<{ subca
     throw new Error("GoogleGenAI no está inicializado. Por favor, configura VITE_API_KEY en tu archivo .env");
   }
 
-  const prompt = `Analiza este documento PDF que contiene un estado de cuenta o lista de transacciones.
+  // PASO 1: Extraer todas las transacciones con descripción del comercio
+  const extractionPrompt = `Analiza este documento PDF que contiene un estado de cuenta o lista de transacciones.
 
 INSTRUCCIONES:
 1. Identifica TODAS las transacciones con montos de dinero
 2. Ignora: créditos, abonos, pagos recibidos, intereses a favor
 3. Incluye SOLO: gastos, compras, cargos, débitos
-4. Para cada gasto, clasifícalo en la subcategoría más apropiada de esta lista:
-
-${JSON.stringify(allSubcategories, null, 2)}
-
-REGLAS DE CATEGORIZACIÓN (USA EXACTAMENTE ESTOS NOMBRES):
-- Restaurantes/comida fuera → "Restaurantes"
-- Supermercados/tiendas de comida → "Despensa"
-- Gasolina → "Gasolina y fluidos"
-- Transporte público/Uber/taxis → "Transporte público"
-- Vuelos/avión → "Vuelos"
-- Estacionamiento/casetas → "Estacionamiento y casetas"
-- Amazon/compras online → "Otros gastos personales"
-- Netflix/Disney/streaming video → "Suscripciones de video"
-- Spotify/Apple Music/audio → "Suscripciones de audio"
-- Rappi/Uber Eats/apps comida → "Restaurantes"
-- Apps/software/tecnología → "Artículos de tecnología"
-- Hoteles/hospedaje → "Hospedaje"
-- Viajes/paquetes turísticos → "Paquetes de viajes"
-- Ropa → "Ropa adultos"
-- Zapatos → "Zapatos adultos"
-- Electricidad/luz → "Electricidad"
-- Gas → "Gas"
-- Agua → "Agua"
-- Celular/teléfono → "Celular"
-- Internet → "Internet"
-- Cable/TV → "Televisión por cable"
-- Medicinas → "Medicamentos"
-- Doctor/consultas → "Doctores"
-- Dentista → "Dentistas"
-- Tarjetas de crédito → "Tarjetas de crédito"
-- Regalos → "Regalos"
-- Mascotas → "Suministros para mascotas"
-- Si no estás seguro → "Otros gastos personales"
+4. Para cada transacción, extrae:
+   - description: el nombre del comercio o descripción del gasto (texto completo como aparece)
+   - amount: el monto (número positivo sin símbolos)
 
 FORMATO DE RESPUESTA (JSON válido):
 [
-  {"subcategory": "Restaurantes", "amount": 150.50},
-  {"subcategory": "Despensa", "amount": 200.00}
+  {"description": "OXXO PLAZA CENTRO", "amount": 150.50},
+  {"description": "WALMART SUPERCENTER", "amount": 200.00},
+  {"description": "UBER TRIP", "amount": 85.00}
 ]
 
 IMPORTANTE:
 - Devuelve SOLO el JSON, sin explicaciones
 - Incluye TODOS los gastos que encuentres
+- Mantén la descripción exacta como aparece en el documento
 - Los montos deben ser números positivos sin símbolos de moneda`;
 
   try {
-    const response = await ai.models.generateContent({
+    console.log('📄 Paso 1: Extrayendo transacciones del PDF...');
+
+    const extractionResponse = await ai.models.generateContent({
       model: model,
       contents: [
         {
@@ -166,44 +141,141 @@ IMPORTANTE:
                 data: base64Pdf,
               },
             },
-            { text: prompt }
+            { text: extractionPrompt }
           ]
         }
       ]
     });
 
-    let jsonString = response.text?.trim() || response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-    if (!jsonString) {
+    let extractedJson = extractionResponse.text?.trim() || extractionResponse.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    if (!extractedJson) {
       throw new Error("No se recibió respuesta del modelo de Gemini");
     }
 
-    console.log('Respuesta de Gemini para PDF:', jsonString.substring(0, 500)); // Log para debugging
+    // Limpiar markdown code blocks
+    extractedJson = extractedJson.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const extractedTransactions = JSON.parse(extractedJson) as Array<{ description: string; amount: number }>;
 
-    // Limpiar markdown code blocks si existen
-    jsonString = jsonString.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    console.log(`✅ Extraídas ${extractedTransactions.length} transacciones`);
 
-    const parsedData = JSON.parse(jsonString) as Array<{ subcategory: string; amount: number }>;
+    // PASO 2: Emparejar transacciones con subcategorías usando coincidencia de texto
+    console.log('🔍 Paso 2: Emparejando transacciones con subcategorías...');
 
-    console.log(`Total de transacciones extraídas: ${parsedData.length}`);
+    const matched: Array<{ subcategory: string; amount: number }> = [];
+    const unmatched: Array<{ description: string; amount: number }> = [];
 
-    // Post-process validation to ensure data integrity
-    const validSubcategorySet = new Set<string>(allSubcategories);
-    const validatedData = parsedData.filter(item => {
-      const isValid = validSubcategorySet.has(item.subcategory);
-      if (!isValid) {
-        console.warn(`Subcategoría inválida descartada: "${item.subcategory}" (monto: ${item.amount})`);
+    for (const transaction of extractedTransactions) {
+      const desc = transaction.description.toLowerCase();
+      let foundMatch = false;
+
+      // Buscar coincidencia exacta o parcial con subcategorías
+      for (const subcategory of allSubcategories) {
+        const subLower = subcategory.toLowerCase();
+
+        // Coincidencia si la subcategoría está en la descripción o viceversa
+        if (desc.includes(subLower) || subLower.includes(desc)) {
+          matched.push({ subcategory, amount: transaction.amount });
+          foundMatch = true;
+          break;
+        }
       }
-      return isValid;
-    });
 
-    console.log(`Transacciones válidas después de filtrado: ${validatedData.length}`);
-
-    if (validatedData.length === 0 && parsedData.length > 0) {
-      console.warn('Todas las transacciones fueron descartadas por subcategorías inválidas');
-      console.warn('Transacciones originales:', parsedData.slice(0, 5));
+      if (!foundMatch) {
+        unmatched.push(transaction);
+      }
     }
 
-    return validatedData;
+    console.log(`✅ Emparejadas automáticamente: ${matched.length} transacciones`);
+    console.log(`❓ Pendientes de clasificar con IA: ${unmatched.length} transacciones`);
+
+    // PASO 3: Usar IA solo para transacciones no emparejadas
+    if (unmatched.length > 0) {
+      console.log('🤖 Paso 3: Clasificando transacciones restantes con IA...');
+
+      const classificationPrompt = `Clasifica estas transacciones en las subcategorías más apropiadas.
+
+TRANSACCIONES A CLASIFICAR:
+${JSON.stringify(unmatched, null, 2)}
+
+SUBCATEGORÍAS DISPONIBLES:
+${JSON.stringify(allSubcategories, null, 2)}
+
+REGLAS DE CATEGORIZACIÓN:
+- Restaurantes/comida fuera → "Restaurantes"
+- Supermercados/tiendas de comida → "Despensa"
+- Gasolina/combustible → "Gasolina y fluidos"
+- Transporte público/Uber/taxis → "Transporte público"
+- Vuelos/avión → "Vuelos"
+- Estacionamiento/casetas/peaje → "Estacionamiento y casetas"
+- Amazon/compras online → "Otros gastos personales"
+- Netflix/Disney/streaming video → "Suscripciones de video"
+- Spotify/Apple Music/streaming audio → "Suscripciones de audio"
+- Rappi/Uber Eats/apps de comida → "Restaurantes"
+- Apps/software/tecnología → "Artículos de tecnología"
+- Hoteles/hospedaje → "Hospedaje"
+- Viajes/paquetes turísticos → "Paquetes de viajes"
+- Ropa → "Ropa adultos"
+- Zapatos → "Zapatos adultos"
+- Electricidad/luz/CFE → "Electricidad"
+- Gas → "Gas"
+- Agua → "Agua"
+- Celular/teléfono/Telcel → "Celular"
+- Internet/Izzi/Telmex → "Internet"
+- Cable/TV → "Televisión por cable"
+- Medicinas/farmacias → "Medicamentos"
+- Doctor/consultas médicas → "Doctores"
+- Dentista → "Dentistas"
+- Pagos de tarjetas → "Tarjetas de crédito"
+- Regalos → "Regalos"
+- Mascotas/veterinario → "Suministros para mascotas"
+- Si no estás seguro → "Otros gastos personales"
+
+FORMATO DE RESPUESTA (JSON válido):
+[
+  {"subcategory": "Restaurantes", "amount": 150.50},
+  {"subcategory": "Despensa", "amount": 200.00}
+]
+
+IMPORTANTE:
+- USA EXACTAMENTE los nombres de subcategorías de la lista
+- Devuelve SOLO el JSON, sin explicaciones`;
+
+      const classificationResponse = await ai.models.generateContent({
+        model: model,
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: classificationPrompt }]
+          }
+        ]
+      });
+
+      let classifiedJson = classificationResponse.text?.trim() || classificationResponse.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+      if (classifiedJson) {
+        classifiedJson = classifiedJson.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const classifiedTransactions = JSON.parse(classifiedJson) as Array<{ subcategory: string; amount: number }>;
+
+        // Validar y agregar solo las clasificaciones válidas
+        const validSubcategorySet = new Set<string>(allSubcategories);
+        const validClassified = classifiedTransactions.filter(item => {
+          const isValid = validSubcategorySet.has(item.subcategory);
+          if (!isValid) {
+            console.warn(`❌ Subcategoría inválida descartada: "${item.subcategory}" (monto: ${item.amount})`);
+          }
+          return isValid;
+        });
+
+        matched.push(...validClassified);
+        console.log(`✅ IA clasificó: ${validClassified.length} transacciones`);
+      }
+    }
+
+    console.log(`\n📊 RESUMEN FINAL:`);
+    console.log(`   Total extraído: ${extractedTransactions.length}`);
+    console.log(`   Total clasificado: ${matched.length}`);
+    console.log(`   Tasa de éxito: ${((matched.length / extractedTransactions.length) * 100).toFixed(1)}%`);
+
+    return matched;
 
   } catch (error: any) {
     console.error("Error analyzing budget PDF with Gemini:", error);
