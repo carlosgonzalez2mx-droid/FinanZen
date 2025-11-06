@@ -114,24 +114,34 @@ const Login: React.FC = () => {
     setError(null);
     const provider = providerName === 'google' ? new GoogleAuthProvider() : new OAuthProvider('apple.com');
 
-    // Detectar si estamos en un dispositivo móvil o en Safari
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    // Configurar Google provider para forzar selección de cuenta
+    if (providerName === 'google') {
+      (provider as GoogleAuthProvider).setCustomParameters({
+        prompt: 'select_account'
+      });
+    }
+
+    console.log('Iniciando autenticación con', providerName);
 
     try {
-        // Usar redirect en dispositivos móviles o Safari para evitar problemas con popups
-        if (isMobile || isSafari) {
-          await signInWithRedirect(auth, provider);
-          // El usuario será redirigido y luego regresará a la app
-        } else {
-          await signInWithPopup(auth, provider);
-          // El usuario será autenticado en un popup
-        }
+        // Intentar siempre con popup primero, ya que redirect no funciona bien en Safari iOS
+        console.log('Intentando signInWithPopup...');
+        await signInWithPopup(auth, provider);
+        console.log('SignInWithPopup exitoso');
     } catch (error: any) {
-        // Si el usuario cancela el popup, no mostrar error
-        if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
-          // No mostrar error si el usuario cerró el popup intencionalmente
-        } else {
+        console.error('Error en signInWithPopup:', error.code, error.message);
+
+        // Si el popup falla porque no es compatible, intentar con redirect
+        if (error.code === 'auth/popup-blocked' || error.code === 'auth/operation-not-supported-in-this-environment') {
+          console.log('Popup bloqueado, intentando con redirect...');
+          try {
+            await signInWithRedirect(auth, provider);
+          } catch (redirectError: any) {
+            console.error('Error en signInWithRedirect:', redirectError);
+            setError(getErrorMessage(redirectError.code) || 'Error al iniciar sesión. Intenta de nuevo.');
+          }
+        } else if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
+          // Mostrar error solo si no es cancelación del usuario
           setError(getErrorMessage(error.code) || 'Error al iniciar sesión. Intenta de nuevo.');
         }
     } finally {
