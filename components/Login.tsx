@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { auth } from '../firebaseClient';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, signInWithRedirect, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
 
 
 const Login: React.FC = () => {
@@ -11,6 +11,29 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // Manejar el resultado del redirect cuando el usuario regresa de Google/Apple
+  useEffect(() => {
+    const handleRedirectResult = async () => {
+      try {
+        setLoading(true);
+        const result = await getRedirectResult(auth);
+        if (result) {
+          // El usuario se autenticó exitosamente
+          console.log('Usuario autenticado después del redirect:', result.user);
+        }
+      } catch (error: any) {
+        console.error('Error al procesar redirect:', error);
+        if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
+          setError(getErrorMessage(error.code) || 'Error al iniciar sesión. Intenta de nuevo.');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    handleRedirectResult();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
