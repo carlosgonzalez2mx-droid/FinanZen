@@ -99,13 +99,23 @@ export const useBudget = (user: User | null) => {
       const budgetItems = await analyzeBudgetPDF(base64Pdf);
 
       if (budgetItems.length > 0) {
+        // Sumar montos por subcategoría (en caso de que haya múltiples transacciones de la misma subcategoría)
         const newPlan = budgetItems.reduce((acc, item) => {
-          acc[item.subcategory] = item.amount;
+          if (acc[item.subcategory]) {
+            acc[item.subcategory] += item.amount; // Sumar al monto existente
+          } else {
+            acc[item.subcategory] = item.amount; // Crear nueva entrada
+          }
           return acc;
         }, {} as Record<string, number>);
+
+        console.log('Presupuesto consolidado por subcategoría:', newPlan);
+        console.log('Total de subcategorías únicas:', Object.keys(newPlan).length);
+        console.log('Monto total:', Object.values(newPlan).reduce((sum, val) => sum + val, 0));
+
         await setDoc(doc(db, 'budget_plans', user.uid), newPlan, { merge: true });
         await fetchBudgetData();
-        showNotification('Presupuesto importado desde PDF exitosamente', 'success');
+        showNotification(`Presupuesto importado: ${budgetItems.length} transacciones en ${Object.keys(newPlan).length} categorías`, 'success');
       } else {
         showNotification('No se encontraron datos de presupuesto en el PDF', 'warning');
       }
