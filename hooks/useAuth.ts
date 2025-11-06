@@ -7,18 +7,23 @@ export const useAuth = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    console.log('useAuth: Iniciando listener de autenticación');
     const unsubscribe = onAuthStateChanged(
       auth,
       (user) => {
+        console.log('useAuth: Estado de autenticación cambió', user ? `Usuario: ${user.email}` : 'Sin usuario');
         setUser(user);
         setLoading(false);
       },
       (error) => {
-        console.error('Auth error:', error);
+        console.error('useAuth: Error de autenticación:', error);
         setLoading(false);
       }
     );
-    return () => unsubscribe();
+    return () => {
+      console.log('useAuth: Limpiando listener de autenticación');
+      unsubscribe();
+    };
   }, []);
 
   return { user, loading };

@@ -15,16 +15,28 @@ const Login: React.FC = () => {
   // Manejar el resultado del redirect cuando el usuario regresa de Google/Apple
   useEffect(() => {
     const handleRedirectResult = async () => {
+      console.log('Verificando resultado del redirect...');
       try {
         setLoading(true);
         const result = await getRedirectResult(auth);
+        console.log('Resultado del redirect:', result);
         if (result) {
           // El usuario se autenticó exitosamente
-          console.log('Usuario autenticado después del redirect:', result.user);
+          console.log('Usuario autenticado después del redirect:', result.user.email);
+          // El onAuthStateChanged de useAuth detectará el cambio y actualizará la UI
+        } else {
+          console.log('No hay resultado de redirect pendiente (carga normal de la página)');
         }
       } catch (error: any) {
         console.error('Error al procesar redirect:', error);
-        if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
+        console.error('Código de error:', error.code);
+        console.error('Mensaje de error:', error.message);
+
+        // Mostrar error solo si es relevante
+        if (error.code &&
+            error.code !== 'auth/popup-closed-by-user' &&
+            error.code !== 'auth/cancelled-popup-request' &&
+            error.code !== 'auth/network-request-failed') {
           setError(getErrorMessage(error.code) || 'Error al iniciar sesión. Intenta de nuevo.');
         }
       } finally {
