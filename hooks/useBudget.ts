@@ -129,7 +129,7 @@ export const useBudget = (user: User | null) => {
       showNotification('Error al procesar el PDF. Por favor, intenta de nuevo.', 'error');
       throw error;
     }
-  }, [user, fetchBudgetData, showNotification]);
+  }, [user, budgetCategories, fetchBudgetData, showNotification]);
 
   const addSubcategory = useCallback(async (mainCategory: MainCategory, newSubcategoryName: string) => {
     if (!user) return;

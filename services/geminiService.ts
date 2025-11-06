@@ -101,7 +101,12 @@ export async function analyzeBudgetPDF(base64Pdf: string, userSubcategories?: st
     ? userSubcategories
     : INITIAL_BUDGET_CATEGORIES.flatMap(c => c.subcategories);
 
-  console.log(`📋 Usando ${allSubcategories.length} subcategorías para el análisis:`, allSubcategories.slice(0, 10));
+  console.log(`📋 Usando ${allSubcategories.length} subcategorías para el análisis:`);
+  console.log('Primeras 20 subcategorías:', allSubcategories.slice(0, 20));
+
+  // Verificar si UBER está en la lista
+  const hasUber = allSubcategories.some(s => s.toLowerCase().includes('uber'));
+  console.log(`¿Contiene "UBER"?: ${hasUber}`);
 
   if (!ai) {
     throw new Error("GoogleGenAI no está inicializado. Por favor, configura VITE_API_KEY en tu archivo .env");
@@ -179,6 +184,7 @@ IMPORTANTE:
 
         // Coincidencia si la subcategoría está en la descripción o viceversa
         if (desc.includes(subLower) || subLower.includes(desc)) {
+          console.log(`   ✓ Match: "${transaction.description}" → "${subcategory}" ($${transaction.amount})`);
           matched.push({ subcategory, amount: transaction.amount });
           foundMatch = true;
           break;
@@ -186,6 +192,7 @@ IMPORTANTE:
       }
 
       if (!foundMatch) {
+        console.log(`   ✗ No match: "${transaction.description}" ($${transaction.amount})`);
         unmatched.push(transaction);
       }
     }
