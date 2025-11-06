@@ -261,7 +261,8 @@ const BudgetPage: React.FC<BudgetPageProps> = ({ transactions, budgetPlan, setBu
   const [pdfError, setPdfError] = useState<string | null>(null);
 
   const handleBudgetChange = (subcategory: string, amount: number) => {
-    setBudgetPlan(prev => ({...prev, [subcategory]: amount}));
+    const updatedPlan = {...budgetPlan, [subcategory]: amount};
+    setBudgetPlan(updatedPlan);
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
