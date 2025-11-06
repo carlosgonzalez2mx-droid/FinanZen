@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { auth } from '../firebaseClient';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, signInWithRedirect, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
 
 
 const Login: React.FC = () => {
@@ -78,10 +78,20 @@ const Login: React.FC = () => {
     setLoading(true);
     setError(null);
     const provider = providerName === 'google' ? new GoogleAuthProvider() : new OAuthProvider('apple.com');
-    
+
+    // Detectar si estamos en un dispositivo móvil o en Safari
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
     try {
-        await signInWithPopup(auth, provider);
-        // El usuario será redirigido automáticamente cuando se establezca el estado de autenticación
+        // Usar redirect en dispositivos móviles o Safari para evitar problemas con popups
+        if (isMobile || isSafari) {
+          await signInWithRedirect(auth, provider);
+          // El usuario será redirigido y luego regresará a la app
+        } else {
+          await signInWithPopup(auth, provider);
+          // El usuario será autenticado en un popup
+        }
     } catch (error: any) {
         // Si el usuario cancela el popup, no mostrar error
         if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {

@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, setPersistence, browserSessionPersistence } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // --- CONFIGURACIÓN DE FIREBASE ---
@@ -34,14 +34,19 @@ const app = initializeApp(firebaseConfig);
 // Inicializa Auth
 export const auth = getAuth(app);
 
-// Configura la persistencia de sesión para que solo dure mientras el navegador esté abierto
-// browserSessionPersistence: La sesión se cierra al cerrar el navegador
-setPersistence(auth, browserSessionPersistence)
+// Configuración de persistencia compatible con Safari iOS y OAuth redirects
+// Se usa browserLocalPersistence porque browserSessionPersistence no es compatible
+// con OAuth redirects en Safari iOS (causa el error "missing initial state")
+// Nota: Para mejor seguridad en producción, considera implementar auto-logout
+// después de cierto tiempo de inactividad
+setPersistence(auth, browserLocalPersistence)
   .then(() => {
-    console.log('Persistencia de sesión configurada: solo durante la sesión del navegador');
+    console.log('Persistencia de autenticación configurada correctamente');
   })
   .catch((error) => {
     console.error('Error al configurar persistencia:', error);
+    // Fallback a persistencia en memoria si falla localStorage
+    return setPersistence(auth, inMemoryPersistence);
   });
 
 export const db = getFirestore(app);
