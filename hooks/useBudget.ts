@@ -96,7 +96,12 @@ export const useBudget = (user: User | null) => {
 
       const dataUri = await fileToDataUri(file);
       const base64Pdf = dataUri.split(',')[1];
-      const budgetItems = await analyzeBudgetPDF(base64Pdf);
+
+      // Obtener todas las subcategorías personalizadas del usuario
+      const userSubcategories = budgetCategories.flatMap(c => c.subcategories);
+      console.log('🔧 Pasando subcategorías personalizadas del usuario al análisis:', userSubcategories.length);
+
+      const budgetItems = await analyzeBudgetPDF(base64Pdf, userSubcategories);
 
       if (budgetItems.length > 0) {
         // Sumar montos por subcategoría (en caso de que haya múltiples transacciones de la misma subcategoría)

@@ -92,11 +92,16 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura:
   }
 }
 
-export async function analyzeBudgetPDF(base64Pdf: string): Promise<Array<{ subcategory: string; amount: number }>> {
+export async function analyzeBudgetPDF(base64Pdf: string, userSubcategories?: string[]): Promise<Array<{ subcategory: string; amount: number }>> {
   // Usar gemini-2.0-flash-exp - Modelo gratuito, rápido y compatible con PDFs
   const model = 'gemini-2.0-flash-exp';
 
-  const allSubcategories = INITIAL_BUDGET_CATEGORIES.flatMap(c => c.subcategories);
+  // Usar las subcategorías personalizadas del usuario si están disponibles, si no usar las iniciales
+  const allSubcategories = userSubcategories && userSubcategories.length > 0
+    ? userSubcategories
+    : INITIAL_BUDGET_CATEGORIES.flatMap(c => c.subcategories);
+
+  console.log(`📋 Usando ${allSubcategories.length} subcategorías para el análisis:`, allSubcategories.slice(0, 10));
 
   if (!ai) {
     throw new Error("GoogleGenAI no está inicializado. Por favor, configura VITE_API_KEY en tu archivo .env");
