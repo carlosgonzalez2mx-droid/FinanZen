@@ -102,17 +102,38 @@ export async function analyzeBudgetPDF(base64Pdf: string): Promise<Array<{ subca
     throw new Error("GoogleGenAI no está inicializado. Por favor, configura VITE_API_KEY en tu archivo .env");
   }
 
-  const prompt = `Analiza este documento PDF que contiene un presupuesto. Extrae cada línea de gasto con su monto presupuestado. Para cada línea, encuentra la subcategoría más apropiada de la siguiente lista de subcategorías válidas: ${JSON.stringify(allSubcategories)}.
+  const prompt = `Analiza este documento PDF que contiene un estado de cuenta o lista de transacciones.
 
-Devuelve ÚNICAMENTE un array de objetos JSON válido con esta estructura:
+INSTRUCCIONES:
+1. Identifica TODAS las transacciones con montos de dinero
+2. Ignora: créditos, abonos, pagos recibidos, intereses a favor
+3. Incluye SOLO: gastos, compras, cargos, débitos
+4. Para cada gasto, clasifícalo en la subcategoría más apropiada de esta lista:
+
+${JSON.stringify(allSubcategories, null, 2)}
+
+REGLAS DE CATEGORIZACIÓN:
+- Restaurantes/comida → "Comidas fuera"
+- Supermercados/tiendas → "Supermercado"
+- Gasolina/transporte → "Gasolina" o "Transporte público"
+- Amazon/compras online → "Compras en línea"
+- Netflix/servicios → "Entretenimiento digital"
+- Rappi/Uber Eats → "Apps de comida"
+- Cafeterías → "Cafeterías"
+- Apps/software → "Aplicaciones y software"
+- Viajes/hoteles → "Viajes y vacaciones"
+- Si no estás seguro → "Otros gastos personales"
+
+FORMATO DE RESPUESTA (JSON válido):
 [
-  {
-    "subcategory": "nombre exacto de la subcategoría de la lista",
-    "amount": número (sin símbolos de moneda)
-  }
+  {"subcategory": "Comidas fuera", "amount": 150.50},
+  {"subcategory": "Supermercado", "amount": 200.00}
 ]
 
-Asegúrate de que el valor de 'subcategory' sea SIEMPRE uno de la lista proporcionada.`;
+IMPORTANTE:
+- Devuelve SOLO el JSON, sin explicaciones
+- Incluye TODOS los gastos que encuentres
+- Los montos deben ser números positivos sin símbolos de moneda`;
 
   try {
     const response = await ai.models.generateContent({
@@ -138,15 +159,31 @@ Asegúrate de que el valor de 'subcategory' sea SIEMPRE uno de la lista proporci
       throw new Error("No se recibió respuesta del modelo de Gemini");
     }
 
+    console.log('Respuesta de Gemini para PDF:', jsonString.substring(0, 500)); // Log para debugging
+
     // Limpiar markdown code blocks si existen
     jsonString = jsonString.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
     const parsedData = JSON.parse(jsonString) as Array<{ subcategory: string; amount: number }>;
 
+    console.log(`Total de transacciones extraídas: ${parsedData.length}`);
+
     // Post-process validation to ensure data integrity
-    // Fix: Widen the type of the Set to `Set<string>` to allow checking against a generic string from the parsed JSON.
     const validSubcategorySet = new Set<string>(allSubcategories);
-    const validatedData = parsedData.filter(item => validSubcategorySet.has(item.subcategory));
+    const validatedData = parsedData.filter(item => {
+      const isValid = validSubcategorySet.has(item.subcategory);
+      if (!isValid) {
+        console.warn(`Subcategoría inválida descartada: "${item.subcategory}" (monto: ${item.amount})`);
+      }
+      return isValid;
+    });
+
+    console.log(`Transacciones válidas después de filtrado: ${validatedData.length}`);
+
+    if (validatedData.length === 0 && parsedData.length > 0) {
+      console.warn('Todas las transacciones fueron descartadas por subcategorías inválidas');
+      console.warn('Transacciones originales:', parsedData.slice(0, 5));
+    }
 
     return validatedData;
 
